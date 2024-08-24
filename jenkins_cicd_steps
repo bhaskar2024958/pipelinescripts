@@ -1,0 +1,231 @@
+Jenkins Full CI/CD Pipline 
+--------------------------
+Phase 1 : Infrastructure
+Phase 2 : Setup Sonar
+Phase 3 : Setup Nexus
+Phase 4 : Jenkins Setup (CI)
+Phase 5 : Kubernetes Setup (CD)
+Phase 6 : Jenkins Configurations
+	Step 1 : Plugins Installations
+	Step 2 : Store Passwords in Secure Way
+	Step 3 : Tools Configuration
+	Step 4 : Sonar Server Configuration
+	Step 5 : Nexus Configuration
+	Step 6 : Pipeline Syntax
+	Step 7 : CI/CD Pipeline Stages
+
+Phase 1 : Infrastructure
+------------------------
+VMS [jenkins,kubernetes,sonar,nexus]
+Jenkins - 30 GB
+Sonar & Nexus - 25 GB
+Security Group need to enable (All ports & All Traffic)
+
+---------------------
+Phase 2 : Sonar Setup
+---------------------
+sudo apt update
+sudo apt install openjdk-17-jre-headless -y
+sudo apt  install docker.io -y 
+sudo chmod 666 /var/run/docker.sock (other users can access)
+docker pull sonarqube:lts-community
+docker run -d --name sonar -p 9000:9000 sonarqube:lts-community
+
+Token Generation : 
+Administration -> Security -> Users - > Token Name : sonar-token Expires - 30 Days
+
+---------------------
+Phase 3 : Nexus Setup
+---------------------
+sudo apt update
+sudo apt install openjdk-17-jre-headless -y
+sudo apt  install docker.io -y 
+sudo chmod 666 /var/run/docker.sock
+docker run -d --name nexus3 -p 8081:8081 sonatype/nexus3
+
+Get the password from docker container:
+-------------------------------------
+docker exec -it nexus3 /bin/bash 
+cd sonattype-work/nexus3
+cd nexus3/
+cat admin.password
+
+Configurations in Nexus
+-----------------------
+Configure anonymouds Access : Enable anonymous access 
+Click on repository and enable Deployment Policy -> Allow Redeploy
+Layout Policy : Permissive
+
+---------------------
+Phase 4 : Jenkins Setup
+---------------------
+
+Java & Docker Setup
+-------------------
+sudo apt update
+sudo apt install openjdk-17-jre-headless -y
+sudo apt  install docker.io -y 
+sudo chmod 666 /var/run/docker.sock
+
+Jenkins Scripts
+---------------
+sudo wget -O /usr/share/keyrings/jenkins-keyring.asc \
+  https://pkg.jenkins.io/debian-stable/jenkins.io-2023.key
+echo "deb [signed-by=/usr/share/keyrings/jenkins-keyring.asc]" \
+  https://pkg.jenkins.io/debian-stable binary/ | sudo tee \
+  /etc/apt/sources.list.d/jenkins.list > /dev/null
+sudo apt-get update
+sudo apt-get install jenkins -y
+
+View Password
+-------------
+sudo systemctl status jenkins
+
+Trivy Installation
+------------------
+sudo apt-get install wget apt-transport-https gnupg lsb-release
+wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | gpg --dearmor | sudo tee /usr/share/keyrings/trivy.gpg > /dev/null
+echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee -a /etc/apt/sources.list.d/trivy.list
+sudo apt-get update
+sudo apt-get install trivy -y
+
+-------------------------------
+Phase 5 : Kubernetes Setup (CD)
+--------------------------------
+
+#!/bin/bash
+
+# Install AWSCLI
+sudo su -  jenkins
+sudo apt install -y unzip
+curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+unzip awscliv2.zip
+sudo ./aws/install
+
+# Install kubectl
+curl -LO "https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl"
+chmod +x ./kubectl 
+sudo mv ./kubectl /usr/local/bin
+kubectl version --short --client
+
+# Install eksctl
+curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
+sudo mv /tmp/eksctl /usr/local/bin 
+eksctl version
+
+aws configure (Generate Access Key & Secret From Security)
+
+Create Kubernetes Cluster (20 min)
+-------------------------
+eksctl create cluster --name javaexpress-new-cluster --version 1.29 --region ap-south-1 --nodegroup-name worker-nodes --node-type t2.micro --nodes 2
+
+Delete LoadBalancer
+-------------------
+kubectl delete svc springboot-svc 
+
+Delete Kubernetes Cluster 
+-------------------------
+eksctl delete cluster --name javaexpress-new-cluster
+
+-------------------------------
+Phase 6 : Jenkins Configurations
+--------------------------------
+
+Step 1 : Plugins Installations
+Step 2 : Store Passwords in Secure Way
+Step 3 : Tools Configuration
+Step 4 : Sonar Server Configuration
+Step 5 : Nexus Configuration
+Step 6 : Pipeline Syntax
+
+Step 1 : Plugins Installations
+------------------------------
+eclipse terrium
+maven integration  
+Pipeline Maven Integration Plugin
+Configfile provider 
+SonarQube Scanner
+Docker 
+Docker Pipeline
+Kubernetes
+Kubernetes CLI 
+Kubernetes Pipeline Devops Steps 
+Kubernetes Credentails
+Kubernetes Client API
+
+Step 2 : Store Passwords in Secure Way
+--------------------------------------
+Manage Jenkins -> Credentials -> Global -> Add Credentials
+
+## Git
+Kind : Username with password
+Username: bhaskar2024958
+Password: Generated Token
+ID: git-cred
+
+## Sonar
+Kind : Secret Text
+Secret: Generate Toke
+ID : sonar-token
+
+## Docker
+Kind : Username with Password
+Username : javaexpress
+Password : XXXXXXXXXXX
+ID: docker-cred
+
+Step 3 : Tools Configuration
+----------------------------
+
+Name: jdk17
+Install Automatically
+Add Installer : Install from adoptium.net
+Version: jdk-17
+
+Name: maven2
+Version: 3.6.1
+
+Name: sonar-scanner 
+Version: 5.0.1.3006
+
+Name: docker
+Version : latest
+
+
+Step 4 : Sonar Server Configuration
+-----------------------------------
+Manage Jenkins -> System -> SonarQube Servers
+	Add Sonarqube 
+	Name: sonar 
+	Server AuthenticationToken 
+	URL : http://localhost:9000
+
+
+Step 5 : Nexus Configuration
+-----------------------------
+Change maven-releases url in git repo
+
+Manage Jenkins -> Managed Files -> Add a new Config 
+
+Choose Global Maven settings.xml (all reposiotires)
+
+ID: global-settings
+
+<server>
+	<id>maven-releases</id>
+	<username>admin</username>
+	<password>12345678</password>
+</server>
+<server>
+	<id>maven-snapshots</id>
+	<username>admin</username>
+	<password>12345678</password>
+</server>
+
+
+Step 6 : Pipeline Syntax
+------------------------
+git:Git Repository
+withDockerRegistry
+withMaven: Provide Maven envirnonment
+
