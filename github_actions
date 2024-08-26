@@ -1,0 +1,130 @@
+GitHub Actions Full CI/CD Pipline
+----------------------------------
+Phase 1 : Infrastructre Setup (one VM)
+Phase 2 : Sonar Setup 
+Phase 3 : Trivy Setup
+Phase 4 : Kubernetes Setup
+Phase 5 : Configuration for Github Actions
+
+
+Sonar Setup
+-----------
+sudo apt  install docker.io -y 
+sudo chmod 666 /var/run/docker.sock
+docker pull sonarqube:lts-community
+docker run -d --name sonar -p 9000:9000 sonarqube:lts-community
+
+Trivy Setup
+-----------
+sudo apt-get install wget apt-transport-https gnupg lsb-release
+wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | gpg --dearmor | sudo tee /usr/share/keyrings/trivy.gpg > /dev/null
+echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee -a /etc/apt/sources.list.d/trivy.list
+sudo apt-get update
+sudo apt-get install trivy -y
+
+
+Kubernetes Setup
+----------------
+# Install AWSCLI
+sudo apt install -y unzip
+curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+unzip awscliv2.zip
+sudo ./aws/install
+
+# Install kubectl
+curl -LO "https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl"
+chmod +x ./kubectl 
+sudo mv ./kubectl /usr/local/bin
+
+# Install eksctl
+curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
+sudo mv /tmp/eksctl /usr/local/bin 
+eksctl version
+
+aws configure (Generate Access Key & Secret From Security)
+XXX
+XXX
+
+Create Kubernetes Cluster (20 min)
+-------------------------
+eksctl create cluster --name javaexpress-new-cluster --version 1.29 --region ap-south-1 --nodegroup-name worker-nodes --node-type t2.micro --nodes 2
+
+Delete LoadBalancer
+-------------------
+kubectl delete svc springboot-svc 
+
+Delete Kubernetes Cluster 
+-------------------------
+eksctl delete cluster --name javaexpress-new-cluster
+
+
+
+name: Java CI with Maven
+
+on:
+  push:
+    branches: [ "main" ]
+    
+jobs:
+  build:
+
+    runs-on: self-hosted
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        cache: maven
+    - name: Build with Maven
+      run: mvn package --file pom.xml
+
+    - name: Upload a Build Artifact
+      uses: actions/upload-artifact@v4.3.6
+      with:
+        name: BoardGame
+        path: target/*.jar
+
+    - name: Trivy FS Scan
+      run: |
+        trivy fs --format table -o trivy-fs-report.html .
+
+
+    - name: Analyze with SonarQube
+      uses: SonarSource/sonarqube-scan-action@7295e71c9583053f5bf40e9d4068a0c974603ec8
+      env:
+        SONAR_TOKEN: ${{ secrets.SONARQUBE_TOKEN }}   
+        SONAR_HOST_URL: ${{ secrets.SONARQUBE_HOST }} 
+      with:
+        args:
+          -Dsonar.projectKey=BoardGame
+          -Dsonar.java.binaries=.
+
+    - name: Login to Docker Hub
+      uses: docker/login-action@v1
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}    
+
+    - name: Build Docker Image
+      run: |
+          docker build -t javaexpress/boardgame:latest .
+
+    - name: Trivy Image Scan
+      run: |
+          trivy image --format table -o trivy-image-report.html javaexpress/boardgame:latest        
+
+    - name: Push Docker Image
+      run: |
+          docker push javaexpress/boardgame:latest
+
+    - name: Deploy to Kubernetes
+      run: |
+          kubectl apply -f deployment-service.yaml        
+
+    - name: Clean the workspace
+      uses: docker://alpine
+      with:
+        args: /bin/sh -c "find \"${GITHUB_WORKSPACE}\" -mindepth 1 ! -name . -prune -exec rm -rf {} +"          
