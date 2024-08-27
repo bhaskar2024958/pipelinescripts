@@ -1,0 +1,135 @@
+First Script
+------------
+provider "aws" {
+  region = "ap-south-1"
+}
+
+resource "aws_instance" "mymachine" {
+  count= var.mycount
+  ami = var.myami
+  instance_type = var.myinstance_type
+  key_name = var.ssh_key
+  vpc_security_group_ids = ["sg-045dc9c1d0f35b660"]
+   
+   tags = {
+        Name = "MyMachine"
+  }
+}
+
+vi variables.tf 
+----------------
+variable "myami" {
+  
+}
+
+variable "myinstance_type" {
+ 
+}
+
+variable "ssh_key" {
+ 
+}
+
+variable "mycount" {
+  
+}
+
+dev.tfvars
+----------
+myami = "ami-0c2af51e265bd5e0e"
+myinstance_type="t2.nano"
+ssh_key="devops_keypair"
+mycount= 2
+
+
+Second Script
+-------------
+provider "aws" {
+  region = "ap-south-1"
+}
+
+resource "aws_vpc" "main" {
+  cidr_block = "10.0.0.0/16"
+
+  tags = {
+    Name = "my-vpc"
+  }
+}
+
+resource "aws_subnet" "main" {
+  vpc_id     = aws_vpc.main.id
+  cidr_block = "10.0.1.0/24"
+  availability_zone ="ap-south-1a"
+  tags = {
+    Name = "my-subnet"
+  }
+}
+
+resource "aws_security_group" "main" {
+  
+  vpc_id     = aws_vpc.main.id
+
+  ingress {
+    from_port = 22
+    to_port = 22
+    protocol = "tcp"
+    cidr_blocks = [ "0.0.0.0/0" ]
+  }
+
+  ingress {
+    from_port = 80
+    to_port = 80
+    protocol = "tcp"
+    cidr_blocks = [ "0.0.0.0/0" ]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+   tags = {
+    Name = "my-security-group"
+  }
+}
+
+resource "aws_instance" "web" {
+  ami = "ami-0c2af51e265bd5e0e"
+  instance_type = "t2.micro"
+  subnet_id = aws_subnet.main.id
+  security_groups = [ aws_security_group.main.id ]
+  associate_public_ip_address = true 
+  key_name = "devops_keypair"
+
+  tags = {
+    Name = "my-ec2-instance"
+  }
+}
+
+output "vpc_id" {
+  value = aws_vpc.main.id
+}
+
+
+output "subnet_id" {
+  value = aws_subnet.main.id
+}
+
+output "security_group_id" {
+  value = aws_security_group.main.id
+}
+
+output "publicIP" {
+  value = aws_instance.web.public_ip
+}
+
+
+
+
+
+
+
+
+
